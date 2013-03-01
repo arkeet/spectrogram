@@ -19,6 +19,7 @@
 bool done;
 bool paused;
 double fps;
+double sensitivity;
 
 #define TWOPI (2*M_PI)
 #define SQRTWOPI (sqrt(2*M_PI))
@@ -70,6 +71,16 @@ void GLFWCALL keyCallback(int key, int action)
                 paused = !paused;
             }
             break;
+        case GLFW_KEY_UP:
+            if (action == GLFW_PRESS) {
+                sensitivity += 0.5;
+            }
+            break;
+        case GLFW_KEY_DOWN:
+            if (action == GLFW_PRESS) {
+                sensitivity -= 0.5;
+            }
+            break;
     }
 }
 
@@ -85,7 +96,7 @@ inline double logistic(double x)
 uint32_t colourmap(double x)
 {
     uint8_t rgba[4];
-    double logx = log10(x);
+    double logx = log10(x) + sensitivity;
     rgba[0] = logistic(logx-0) * 255;
     rgba[1] = logistic(logx-2) * 255;
     rgba[2] = logistic(logx-4) * 255;
@@ -146,7 +157,7 @@ int main(int argc, char* argv[])
     glfwSetWindowCloseCallback(windowCloseCallback);
     glfwSetKeyCallback(keyCallback);
 
-    glEnable(GL_TEXTURE_RECTANGLE_ARB);
+    glEnable(GL_TEXTURE_RECTANGLE);
 
     glViewport(0, 0, WIDTH, HEIGHT);
 
@@ -159,6 +170,7 @@ int main(int argc, char* argv[])
 
     done = false;
     paused = false;
+    sensitivity = 0;
 
     const int FTSIZE = BUFSIZE/2 + 1;
     const int CEPSINSIZE = FTSIZE/2;
@@ -215,7 +227,7 @@ int main(int argc, char* argv[])
         int i, j, k;
 
         int peakid;
-        while (!paused && mydata.time > buftime) {
+        while (mydata.time > buftime) {
             pthread_mutex_lock(&mutex);
 
             if (mydata.time - buftime > BUFSIZE * (NBUFFERS - 1)) {
@@ -259,10 +271,13 @@ int main(int argc, char* argv[])
                 x = (x + 1) % WIDTH;
             }
 
-            glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RGBA, WIDTH, HEIGHT, 0,
-                    GL_RGBA, GL_UNSIGNED_BYTE, screen);
-
             pthread_mutex_unlock(&mutex);
+
+            printf("%d\n", GL_TEXTURE_RECTANGLE);
+            if (!paused) {
+                glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RGBA, WIDTH, HEIGHT, 0,
+                        GL_RGBA, GL_UNSIGNED_BYTE, screen);
+            }
         }
 
         glClearColor(1, 1, 1, 0);
