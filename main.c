@@ -334,7 +334,7 @@ int main(int argc, char* argv[])
         while (!paused && mydata.time > buftime) {
             pthread_mutex_lock(&mutex);
 
-            if (mydata.time - buftime > BUFSIZE * NBUFFERS || nloop++ > 0) {
+            if (mydata.time - buftime > BUFSIZE * NBUFFERS || nloop++ > 3) {
                 printf("dropped\n", mydata.time);
                 buftime = mydata.time;
                 nextbuf = mydata.nextbuf;
