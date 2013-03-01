@@ -282,7 +282,7 @@ int main(int argc, char* argv[])
 #define IX(arr,stride,x,y) ((arr)[(y)*(stride)+(x)])
     double *screen_fl = calloc(WIDTH*FTSIZE, sizeof(double));
     uint32_t *screen = calloc(WIDTH*FTSIZE, sizeof(uint32_t));
-    memset(screen, 0, sizeof(uint32_t)*WIDTH*HEIGHT);
+    memset(screen, 0, sizeof(uint32_t)*WIDTH*FTSIZE);
 
     glEnable(GL_TEXTURE_RECTANGLE);
 
