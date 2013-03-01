@@ -1,5 +1,3 @@
-// vim:ft=c
-
 #include <math.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -16,10 +14,16 @@
 #include <GL/glfw.h>
 #include <portaudio.h>
 
+#ifndef GL_TEXTURE_RECTANGLE
+#define GL_TEXTURE_RECTANGLE 34037
+#endif
+
 bool done;
 bool paused;
 double fps;
-double sensitivity;
+int brightness;
+int displayperiod;
+int winwidth;
 
 #define TWOPI (2*M_PI)
 #define SQRTWOPI (sqrt(2*M_PI))
@@ -30,7 +34,6 @@ double sensitivity;
 #define BUFSIZE (1024)
 #define NBUFFERS (8)
 
-#define WINWIDTH (128)
 double window[BUFSIZE];
 double window_dt[BUFSIZE];
 
@@ -38,14 +41,60 @@ double window_dt[BUFSIZE];
 #define TABLERES 512
 double logistic_table[TABLESIZE];
 
+enum {
+    gaussian,
+    hann,
+    nuttall,
+    rect,
+    MAX_WINDOW_TYPE
+} windowfunction;
+const char *window_names[] = {
+    "gaussian",
+    "hann",
+    "nuttall",
+    "rect",
+    0
+};
+
 void init_tables()
 {
-    const double scl = 1/(WINWIDTH * SQRTWOPI);
+    double scl = 1.0/winwidth;
     int i;
     for (i = 0; i < BUFSIZE; i++) {
-        double z = (i - BUFSIZE/2) / (WINWIDTH);
-        window[i] = exp(-z*z/2) * scl;
-        window_dt[i] = window[i] * -SAMPLERATE*z/WINWIDTH;
+        double z = (double)(i - BUFSIZE/2) / (winwidth);
+
+        switch (windowfunction) {
+            case gaussian:
+                z *= 2;
+                window[i] = exp(-z*z/2) / SQRTWOPI * scl * 2;
+                window_dt[i] = window[i] * -SAMPLERATE*z/winwidth;
+                break;
+            case hann:
+                if (z <= -1 || z >= 1) {
+                    window[i] = 0;
+                } else {
+                    window[i] = (cos(M_PI*z)+1)/2 * scl;
+                }
+                break;
+            case nuttall:
+                if (z <= -1 || z >= 1) {
+                    window[i] = 0;
+                } else {
+                    window[i] = 0.355768;
+                    window[i] += 0.487396 * cos(M_PI*z);
+                    window[i] += 0.144232 * cos(M_PI*2*z);
+                    window[i] += 0.012604 * cos(M_PI*3*z);
+                    window[i] *= scl;
+                }
+                break;
+            case rect:
+                if (z <= -1 || z >= 1) {
+                    window[i] = 0;
+                } else {
+                    window[i] = scl/2;
+                }
+                break;
+        }
     }
 
     for (i = 0; i < TABLESIZE; i++) {
@@ -73,12 +122,62 @@ void GLFWCALL keyCallback(int key, int action)
             break;
         case GLFW_KEY_UP:
             if (action == GLFW_PRESS) {
-                sensitivity += 0.5;
+                brightness += 5;
+                printf("brightness %d\n", brightness);
             }
             break;
         case GLFW_KEY_DOWN:
             if (action == GLFW_PRESS) {
-                sensitivity -= 0.5;
+                brightness -= 5;
+                printf("brightness %d\n", brightness);
+            }
+            break;
+        case GLFW_KEY_LEFT:
+            if (action == GLFW_PRESS) {
+                displayperiod *= 2;
+                if (displayperiod > BUFSIZE) {
+                    displayperiod = BUFSIZE;
+                }
+                printf("period %d\n", displayperiod);
+            }
+            break;
+        case GLFW_KEY_RIGHT:
+            if (action == GLFW_PRESS) {
+                displayperiod /= 2;
+                if (displayperiod < 1) {
+                    displayperiod = 1;
+                }
+                printf("period %d\n", displayperiod);
+            }
+            break;
+        case '=':
+            if (action == GLFW_PRESS) {
+                winwidth *= 2;
+                if (winwidth > BUFSIZE/2) {
+                    winwidth = BUFSIZE/2;
+                }
+                init_tables();
+                printf("width %d\n", winwidth);
+            }
+            break;
+        case '-':
+            if (action == GLFW_PRESS) {
+                winwidth /= 2;
+                if (winwidth < 1) {
+                    winwidth = 1;
+                }
+                init_tables();
+                printf("width %d\n", winwidth);
+            }
+            break;
+        case '0':
+            if (action == GLFW_PRESS) {
+                windowfunction++;
+                if (windowfunction >= MAX_WINDOW_TYPE) {
+                    windowfunction = 0;
+                }
+                init_tables();
+                printf("window %s\n", window_names[windowfunction]);
             }
             break;
     }
@@ -96,7 +195,7 @@ inline double logistic(double x)
 uint32_t colourmap(double x)
 {
     uint8_t rgba[4];
-    double logx = log10(x) + sensitivity;
+    double logx = log10(x) + (double)brightness/10;
     rgba[0] = logistic(logx-0) * 255;
     rgba[1] = logistic(logx-2) * 255;
     rgba[2] = logistic(logx-4) * 255;
@@ -115,6 +214,7 @@ pthread_mutex_t mutex;
 
 struct mydata {
     int time;
+    int nextbuf;
     double *buffers;
 };
 
@@ -138,6 +238,7 @@ static int paCallback(const void *inputBuffer, void *outputBuffer,
     if (nextbuf == NBUFFERS) {
         nextbuf = 0;
     }
+    mydata->nextbuf = nextbuf;
     pthread_mutex_unlock(&mutex);
 
     return 0;
@@ -170,15 +271,17 @@ int main(int argc, char* argv[])
 
     done = false;
     paused = false;
-    sensitivity = 0;
+    brightness = 50;
+    displayperiod = 128;
+    winwidth = 256;
 
     const int FTSIZE = BUFSIZE/2 + 1;
     const int CEPSINSIZE = FTSIZE/2;
     const int CEPSSIZE = CEPSINSIZE/2 + 1;
 
 #define IX(arr,stride,x,y) ((arr)[(y)*(stride)+(x)])
-    double *screen_fl = calloc(WIDTH*HEIGHT, sizeof(double));
-    uint32_t *screen = calloc(WIDTH*HEIGHT, sizeof(uint32_t));
+    double *screen_fl = calloc(WIDTH*FTSIZE, sizeof(double));
+    uint32_t *screen = calloc(WIDTH*FTSIZE, sizeof(uint32_t));
     memset(screen, 0, sizeof(uint32_t)*WIDTH*HEIGHT);
 
     glEnable(GL_TEXTURE_RECTANGLE);
@@ -200,6 +303,7 @@ int main(int argc, char* argv[])
 
     struct mydata mydata;
     mydata.time = 0;
+    mydata.nextbuf = 0;
     mydata.buffers = buf;
 
     int nextbuf = 0;
@@ -227,19 +331,21 @@ int main(int argc, char* argv[])
         int i, j, k;
 
         int peakid;
-        while (mydata.time > buftime) {
+        int nloop = 0;
+        while (!paused && mydata.time > buftime) {
             pthread_mutex_lock(&mutex);
 
-            if (mydata.time - buftime > BUFSIZE * (NBUFFERS - 1)) {
-                printf("dropped something\n", mydata.time);
+            if (mydata.time - buftime > BUFSIZE * NBUFFERS || nloop++ > 0) {
+                printf("dropped\n", mydata.time);
+                buftime = mydata.time;
+                nextbuf = mydata.nextbuf;
+                pthread_mutex_unlock(&mutex);
+                break;
             }
             buftime += BUFSIZE;
-            nextbuf++;
-            if (nextbuf == NBUFFERS) {
-                nextbuf = 0;
-            }
+            nextbuf = (nextbuf + 1) % NBUFFERS;
 
-            for (j = 0; j < BUFSIZE; j += 128) {
+            for (j = 0; j < BUFSIZE; j += displayperiod) {
                 double *curbuf;
 
                 curbuf = buf + (nextbuf + NBUFFERS - 2) * BUFSIZE + j;
@@ -264,8 +370,8 @@ int main(int argc, char* argv[])
 
                 for (k = 0; k < FTSIZE; k++) {
                     y = k;
-                    IX(screen_fl, WIDTH, x, y) = pow(cabs(ft[k]), 2) * 1.0e7;
-                    //IX(screen_fl, WIDTH, x, y) = pow(1.0e16, (double)k/FTSIZE)/100;
+                    double absft = cabs(ft[k]);
+                    IX(screen_fl, WIDTH, x, y) = absft * absft;
                     IX(screen, WIDTH, x, y) = colourmap(IX(screen_fl, WIDTH, x, y));
                 }
                 x = (x + 1) % WIDTH;
@@ -273,7 +379,6 @@ int main(int argc, char* argv[])
 
             pthread_mutex_unlock(&mutex);
 
-            printf("%d\n", GL_TEXTURE_RECTANGLE);
             if (!paused) {
                 glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RGBA, WIDTH, HEIGHT, 0,
                         GL_RGBA, GL_UNSIGNED_BYTE, screen);
