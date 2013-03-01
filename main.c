@@ -18,13 +18,6 @@
 #define GL_TEXTURE_RECTANGLE 34037
 #endif
 
-bool done;
-bool paused;
-double fps;
-int brightness;
-int displayperiod;
-int winwidth;
-
 #define TWOPI (2*M_PI)
 #define SQRTWOPI (sqrt(2*M_PI))
 
@@ -34,11 +27,20 @@ int winwidth;
 #define BUFSIZE 1024
 #define NBUFFERS 8
 
-double window[BUFSIZE];
-double window_dt[BUFSIZE];
+#define IX(arr,stride,x,y) ((arr)[(y)*(stride)+(x)])
 
 #define TABLESIZE 4096
 #define TABLERES 512
+
+bool done;
+bool paused;
+double fps;
+int brightness;
+int displayperiod;
+int winwidth;
+
+double window[BUFSIZE];
+double window_dt[BUFSIZE];
 double logistic_table[TABLESIZE];
 
 enum {
@@ -49,10 +51,10 @@ enum {
     MAX_WINDOW_TYPE
 } windowfunction;
 const char *window_names[] = {
-    "gaussian",
-    "hann",
-    "nuttall",
-    "rect",
+    "Gaussian",
+    "Hann",
+    "Nuttall",
+    "Rectangle",
     0
 };
 
@@ -118,18 +120,19 @@ void GLFWCALL keyCallback(int key, int action)
         case GLFW_KEY_SPACE:
             if (action == GLFW_PRESS) {
                 paused = !paused;
+                printf("%s\n", paused ? "paused" : "unpaused");
             }
             break;
         case GLFW_KEY_UP:
             if (action == GLFW_PRESS) {
                 brightness += 5;
-                printf("brightness %d\n", brightness);
+                printf("Brightness: %d\n", brightness);
             }
             break;
         case GLFW_KEY_DOWN:
             if (action == GLFW_PRESS) {
                 brightness -= 5;
-                printf("brightness %d\n", brightness);
+                printf("Brightness: %d\n", brightness);
             }
             break;
         case GLFW_KEY_LEFT:
@@ -138,7 +141,7 @@ void GLFWCALL keyCallback(int key, int action)
                 if (displayperiod > BUFSIZE) {
                     displayperiod = BUFSIZE;
                 }
-                printf("period %d\n", displayperiod);
+                printf("Period: %d\n", displayperiod);
             }
             break;
         case GLFW_KEY_RIGHT:
@@ -147,7 +150,7 @@ void GLFWCALL keyCallback(int key, int action)
                 if (displayperiod < 1) {
                     displayperiod = 1;
                 }
-                printf("period %d\n", displayperiod);
+                printf("Period: %d\n", displayperiod);
             }
             break;
         case '=':
@@ -157,7 +160,7 @@ void GLFWCALL keyCallback(int key, int action)
                     winwidth = BUFSIZE/2;
                 }
                 init_tables();
-                printf("width %d\n", winwidth);
+                printf("Window width: %d\n", winwidth);
             }
             break;
         case '-':
@@ -167,7 +170,7 @@ void GLFWCALL keyCallback(int key, int action)
                     winwidth = 1;
                 }
                 init_tables();
-                printf("width %d\n", winwidth);
+                printf("Window width: %d\n", winwidth);
             }
             break;
         case '0':
@@ -177,13 +180,13 @@ void GLFWCALL keyCallback(int key, int action)
                     windowfunction = 0;
                 }
                 init_tables();
-                printf("window %s\n", window_names[windowfunction]);
+                printf("Window: %s\n", window_names[windowfunction]);
             }
             break;
     }
 }
 
-inline double logistic(double x)
+double logistic(double x)
 {
     int i = x * TABLERES + TABLESIZE/2;
     if (i < 0) return 0;
@@ -191,10 +194,21 @@ inline double logistic(double x)
     return logistic_table[i];
 }
 
+double log_fast(double a) {
+    // Thanks Edward Kmett.
+    union { double d; long long x; } u = { a };
+    return (u.x - 4606921278410026770) * 1.539095918623324e-16; // 1 / 6497320848556798.0;
+}
+
+double log10_fast(double a) {
+    union { double d; long long x; } u = { a };
+    return (u.x - 4606921278410026770) * 6.684208645779258e-17;
+}
+
 uint32_t colourmap(double x)
 {
     uint8_t rgba[4];
-    double logx = log10(x) + (double)brightness/10;
+    double logx = log10_fast(x) + (double)brightness/10;
     rgba[0] = logistic(logx-0) * 255;
     rgba[1] = logistic(logx-2) * 255;
     rgba[2] = logistic(logx-4) * 255;
@@ -275,10 +289,6 @@ int main(int argc, char* argv[])
     winwidth = 256;
 
     const int FTSIZE = BUFSIZE/2 + 1;
-    const int CEPSINSIZE = FTSIZE/2;
-    const int CEPSSIZE = CEPSINSIZE/2 + 1;
-
-#define IX(arr,stride,x,y) ((arr)[(y)*(stride)+(x)])
     double *screen_fl = calloc(WIDTH*FTSIZE, sizeof(double));
     uint32_t *screen = calloc(WIDTH*FTSIZE, sizeof(uint32_t));
     memset(screen, 0, sizeof(uint32_t)*WIDTH*FTSIZE);
@@ -316,6 +326,7 @@ int main(int argc, char* argv[])
     Pa_StartStream(stream);
 
     int frame_num = 0;
+    double update_time = gettime();
     double frame_time = gettime();
     fps = 1;
 
@@ -329,12 +340,17 @@ int main(int argc, char* argv[])
     while (!done) {
         int i, j, k;
 
+        int x_min = WIDTH;
+        int x_max = -1;
+
+        double processtime;
+
         int peakid;
         int nloop = 0;
         while (!paused && mydata.time > buftime) {
             pthread_mutex_lock(&mutex);
 
-            if (mydata.time - buftime > BUFSIZE * NBUFFERS || nloop++ > 3) {
+            if (mydata.time - buftime > BUFSIZE * NBUFFERS || nloop++ > 7) {
                 printf("dropped\n", mydata.time);
                 buftime = mydata.time;
                 nextbuf = mydata.nextbuf;
@@ -344,6 +360,7 @@ int main(int argc, char* argv[])
             buftime += BUFSIZE;
             nextbuf = (nextbuf + 1) % NBUFFERS;
 
+            processtime = gettime();
             for (j = 0; j < BUFSIZE; j += displayperiod) {
                 double *curbuf;
 
@@ -371,17 +388,29 @@ int main(int argc, char* argv[])
                     y = k;
                     double absft = cabs(ft[k]);
                     IX(screen_fl, WIDTH, x, y) = absft * absft;
-                    IX(screen, WIDTH, x, y) = colourmap(IX(screen_fl, WIDTH, x, y));
                 }
+
+                if (x < x_min) x_min = x;
+                if (x > x_max) x_max = x;
                 x = (x + 1) % WIDTH;
             }
+            processtime = gettime() - processtime;
 
             pthread_mutex_unlock(&mutex);
 
             if (!paused) {
-                glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RGBA, WIDTH, HEIGHT, 0,
+                for (i = x_min; i <= x_max; i++) {
+                    for (j = 0; j < FTSIZE; j++) {
+                        IX(screen, WIDTH, i, j) = colourmap(IX(screen_fl, WIDTH, i, j));
+                    }
+                }
+                glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RGBA, WIDTH, FTSIZE, 0,
                         GL_RGBA, GL_UNSIGNED_BYTE, screen);
             }
+        }
+
+        if (!paused && nloop == 0) {
+            continue;
         }
 
         glClearColor(1, 1, 1, 0);
@@ -404,6 +433,14 @@ int main(int argc, char* argv[])
         double dt = new_time - frame_time;
         frame_time = new_time;
         fps = fps + (1/dt - fps) * 0.05;
+
+        if (new_time - update_time >= 0.1) {
+            char title[128];
+            snprintf(title, 128, "spectrogram - %6.3f fps - %5.3f ms\n", fps,
+                    processtime);
+            glfwSetWindowTitle(title);
+            update_time = new_time;
+        }
     }
 
     Pa_StopStream(stream);
