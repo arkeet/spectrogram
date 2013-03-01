@@ -28,11 +28,11 @@ int winwidth;
 #define TWOPI (2*M_PI)
 #define SQRTWOPI (sqrt(2*M_PI))
 
-#define WIDTH (800)
-#define HEIGHT (600)
-#define SAMPLERATE (22050)
-#define BUFSIZE (1024)
-#define NBUFFERS (8)
+#define WIDTH 800
+#define HEIGHT 600
+#define SAMPLERATE 22050
+#define BUFSIZE 1024
+#define NBUFFERS 8
 
 double window[BUFSIZE];
 double window_dt[BUFSIZE];
@@ -185,7 +185,6 @@ void GLFWCALL keyCallback(int key, int action)
 
 inline double logistic(double x)
 {
-    return 1/(1+exp(-x));
     int i = x * TABLERES + TABLESIZE/2;
     if (i < 0) return 0;
     if (i >= TABLESIZE) return 1;
@@ -254,7 +253,7 @@ int main(int argc, char* argv[])
     glfwInit();
     glfwOpenWindowHint(GLFW_WINDOW_NO_RESIZE, GL_TRUE);
     glfwOpenWindow(WIDTH, HEIGHT, 0, 0, 0, 0, 0, 0, GLFW_WINDOW);
-    glfwSetWindowTitle("test");
+    glfwSetWindowTitle("spectrogram");
     glfwSetWindowCloseCallback(windowCloseCallback);
     glfwSetKeyCallback(keyCallback);
 
