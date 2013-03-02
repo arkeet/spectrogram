@@ -397,16 +397,16 @@ int main(int argc, char* argv[])
             processtime = gettime() - processtime;
 
             pthread_mutex_unlock(&mutex);
+        }
 
-            if (!paused) {
-                for (i = x_min; i <= x_max; i++) {
-                    for (j = 0; j < FTSIZE; j++) {
-                        IX(screen, WIDTH, i, j) = colourmap(IX(screen_fl, WIDTH, i, j));
-                    }
+        if (!paused && nloop > 0) {
+            for (i = x_min; i <= x_max; i++) {
+                for (j = 0; j < FTSIZE; j++) {
+                    IX(screen, WIDTH, i, j) = colourmap(IX(screen_fl, WIDTH, i, j));
                 }
-                glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RGBA, WIDTH, FTSIZE, 0,
-                        GL_RGBA, GL_UNSIGNED_BYTE, screen);
             }
+            glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RGBA, WIDTH, FTSIZE, 0,
+                    GL_RGBA, GL_UNSIGNED_BYTE, screen);
         }
 
         if (!paused && nloop == 0) {
