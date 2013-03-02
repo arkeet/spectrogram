@@ -436,8 +436,8 @@ int main(int argc, char* argv[])
 
         if (new_time - update_time >= 0.1) {
             char title[128];
-            snprintf(title, 128, "spectrogram - %6.3f fps - %5.3f ms\n", fps,
-                    processtime);
+            snprintf(title, 128, "spectrogram - %.3f fps - %.2f ms\n", fps,
+                    processtime * 1000);
             glfwSetWindowTitle(title);
             update_time = new_time;
         }
