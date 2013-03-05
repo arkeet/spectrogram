@@ -298,8 +298,6 @@ int main(int argc, char* argv[])
     GLuint tex;
     glGenTextures(1, &tex);
     glBindTexture(GL_TEXTURE_RECTANGLE, tex);
-    glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RGBA, WIDTH, FTSIZE, 0, GL_RGBA,
-            GL_UNSIGNED_BYTE, screen);
 
     double buf[BUFSIZE*NBUFFERS];
     double ft_in[BUFSIZE];
@@ -387,7 +385,7 @@ int main(int argc, char* argv[])
                 for (k = 0; k < FTSIZE; k++) {
                     y = k;
                     double absft = cabs(ft[k]);
-                    IX(screen_fl, WIDTH, x, y) = absft * absft;
+                    IX(screen_fl, FTSIZE, y, x) = absft * absft;
                 }
 
                 if (x < x_min) x_min = x;
@@ -402,10 +400,10 @@ int main(int argc, char* argv[])
         if (!paused && nloop > 0) {
             for (i = x_min; i <= x_max; i++) {
                 for (j = 0; j < FTSIZE; j++) {
-                    IX(screen, WIDTH, i, j) = colourmap(IX(screen_fl, WIDTH, i, j));
+                    IX(screen, FTSIZE, j, i) = colourmap(IX(screen_fl, FTSIZE, j, i));
                 }
             }
-            glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RGBA, WIDTH, FTSIZE, 0,
+            glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RGBA, FTSIZE, WIDTH, 0,
                     GL_RGBA, GL_UNSIGNED_BYTE, screen);
         }
 
@@ -417,11 +415,11 @@ int main(int argc, char* argv[])
         glClear(GL_COLOR_BUFFER_BIT);
 
         glBegin(GL_QUADS);
-        glTexCoord2f(0, FTSIZE);
+        glTexCoord2f(FTSIZE, 0);
         glVertex2f(0, 0);
-        glTexCoord2f(WIDTH, FTSIZE);
+        glTexCoord2f(FTSIZE, WIDTH);
         glVertex2f(WIDTH, 0);
-        glTexCoord2f(WIDTH, 0);
+        glTexCoord2f(0, WIDTH);
         glVertex2f(WIDTH, HEIGHT);
         glTexCoord2f(0, 0);
         glVertex2f(0, HEIGHT);
