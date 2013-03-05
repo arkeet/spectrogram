@@ -402,7 +402,7 @@ int main(int argc, char* argv[])
             pthread_mutex_unlock(&mutex);
         }
 
-        if (!paused && nloop > 0) {
+        if (redraw || !paused && nloop > 0) {
             if (redraw) {
                 x_min = 0;
                 x_max = WIDTH - 1;
