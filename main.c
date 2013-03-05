@@ -39,6 +39,7 @@ double fps;
 int brightness;
 int displayperiod;
 int winwidth;
+bool redraw;
 
 double window[SAMPSIZE];
 double window_dt[SAMPSIZE];
@@ -127,12 +128,14 @@ void GLFWCALL keyCallback(int key, int action)
         case GLFW_KEY_UP:
             if (action == GLFW_PRESS) {
                 brightness += 5;
+                redraw = true;
                 printf("Brightness: %d\n", brightness);
             }
             break;
         case GLFW_KEY_DOWN:
             if (action == GLFW_PRESS) {
                 brightness -= 5;
+                redraw = true;
                 printf("Brightness: %d\n", brightness);
             }
             break;
@@ -400,6 +403,11 @@ int main(int argc, char* argv[])
         }
 
         if (!paused && nloop > 0) {
+            if (redraw) {
+                x_min = 0;
+                x_max = WIDTH - 1;
+                redraw = false;
+            }
             for (i = x_min; i <= x_max; i++) {
                 for (j = 0; j < FTSIZE; j++) {
                     IX(screen, FTSIZE, j, i) = colourmap(IX(screen_fl, FTSIZE, j, i));
