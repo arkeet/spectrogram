@@ -24,8 +24,9 @@
 #define WIDTH 800
 #define HEIGHT 600
 #define SAMPLERATE 22050
-#define BUFSIZE 1024
-#define NBUFFERS 8
+#define BUFSIZE 512
+#define SAMPSIZE 2048
+#define NBUFFERS 16
 
 #define IX(arr,stride,x,y) ((arr)[(y)*(stride)+(x)])
 
@@ -39,8 +40,8 @@ int brightness;
 int displayperiod;
 int winwidth;
 
-double window[BUFSIZE];
-double window_dt[BUFSIZE];
+double window[SAMPSIZE];
+double window_dt[SAMPSIZE];
 double logistic_table[TABLESIZE];
 
 enum {
@@ -62,8 +63,8 @@ void init_tables()
 {
     double scl = 1.0/winwidth;
     int i;
-    for (i = 0; i < BUFSIZE; i++) {
-        double z = (double)(i - BUFSIZE/2) / (winwidth);
+    for (i = 0; i < SAMPSIZE; i++) {
+        double z = (double)(i - SAMPSIZE/2) / (winwidth);
 
         switch (windowfunction) {
             case gaussian:
@@ -156,8 +157,8 @@ void GLFWCALL keyCallback(int key, int action)
         case '=':
             if (action == GLFW_PRESS) {
                 winwidth *= 2;
-                if (winwidth > BUFSIZE/2) {
-                    winwidth = BUFSIZE/2;
+                if (winwidth > SAMPSIZE/2) {
+                    winwidth = SAMPSIZE/2;
                 }
                 init_tables();
                 printf("Window width: %d\n", winwidth);
@@ -288,7 +289,7 @@ int main(int argc, char* argv[])
     displayperiod = 128;
     winwidth = 256;
 
-    const int FTSIZE = BUFSIZE/2 + 1;
+    const int FTSIZE = SAMPSIZE/2 + 1;
     double *screen_fl = calloc(WIDTH*FTSIZE, sizeof(double));
     uint32_t *screen = calloc(WIDTH*FTSIZE, sizeof(uint32_t));
     memset(screen, 0, sizeof(uint32_t)*WIDTH*FTSIZE);
@@ -300,7 +301,7 @@ int main(int argc, char* argv[])
     glBindTexture(GL_TEXTURE_RECTANGLE, tex);
 
     double buf[BUFSIZE*NBUFFERS];
-    double ft_in[BUFSIZE];
+    double ft_in[SAMPSIZE];
     fftw_complex ft[FTSIZE];
     fftw_complex ft_dt[FTSIZE];
 
@@ -315,8 +316,8 @@ int main(int argc, char* argv[])
 
     int nextbuf = 0;
 
-    fftw_plan plan = fftw_plan_dft_r2c_1d(BUFSIZE, ft_in, ft, FFTW_MEASURE);
-    fftw_plan plan_dt = fftw_plan_dft_r2c_1d(BUFSIZE, ft_in, ft_dt, FFTW_MEASURE);
+    fftw_plan plan = fftw_plan_dft_r2c_1d(SAMPSIZE, ft_in, ft, FFTW_MEASURE);
+    fftw_plan plan_dt = fftw_plan_dft_r2c_1d(SAMPSIZE, ft_in, ft_dt, FFTW_MEASURE);
 
     PaStream* stream;
     Pa_OpenDefaultStream(&stream, 1, 0, paFloat32, SAMPLERATE, BUFSIZE,
@@ -355,15 +356,13 @@ int main(int argc, char* argv[])
                 pthread_mutex_unlock(&mutex);
                 break;
             }
-            buftime += BUFSIZE;
-            nextbuf = (nextbuf + 1) % NBUFFERS;
 
             processtime = gettime();
             for (j = 0; j < BUFSIZE; j += displayperiod) {
                 double *curbuf;
 
-                curbuf = buf + (nextbuf + NBUFFERS - 2) * BUFSIZE + j;
-                for (i = 0; i < BUFSIZE; i++) {
+                curbuf = buf + (nextbuf + NBUFFERS) * BUFSIZE - SAMPSIZE + j;
+                for (i = 0; i < SAMPSIZE; i++) {
                     if (curbuf > buf + NBUFFERS * BUFSIZE) {
                         curbuf -= NBUFFERS * BUFSIZE;
                     }
@@ -372,8 +371,8 @@ int main(int argc, char* argv[])
                 }
                 fftw_execute(plan);
 
-                curbuf = buf + (nextbuf + NBUFFERS - 2) * BUFSIZE + j;
-                for (i = 0; i < BUFSIZE; i++) {
+                curbuf = buf + (nextbuf + NBUFFERS) * BUFSIZE - SAMPSIZE + j;
+                for (i = 0; i < SAMPSIZE; i++) {
                     if (curbuf > buf + NBUFFERS * BUFSIZE) {
                         curbuf -= NBUFFERS * BUFSIZE;
                     }
@@ -393,6 +392,9 @@ int main(int argc, char* argv[])
                 x = (x + 1) % WIDTH;
             }
             processtime = gettime() - processtime;
+
+            buftime += BUFSIZE;
+            nextbuf = (nextbuf + 1) % NBUFFERS;
 
             pthread_mutex_unlock(&mutex);
         }
