@@ -126,6 +126,7 @@ void GLFWCALL keyCallback(int key, int action)
             }
             break;
         case GLFW_KEY_UP:
+        case 'K':
             if (action == GLFW_PRESS) {
                 brightness += 5;
                 redraw = true;
@@ -133,6 +134,7 @@ void GLFWCALL keyCallback(int key, int action)
             }
             break;
         case GLFW_KEY_DOWN:
+        case 'J':
             if (action == GLFW_PRESS) {
                 brightness -= 5;
                 redraw = true;
@@ -140,6 +142,7 @@ void GLFWCALL keyCallback(int key, int action)
             }
             break;
         case GLFW_KEY_LEFT:
+        case 'H':
             if (action == GLFW_PRESS) {
                 displayperiod *= 2;
                 if (displayperiod > BUFSIZE) {
@@ -149,6 +152,7 @@ void GLFWCALL keyCallback(int key, int action)
             }
             break;
         case GLFW_KEY_RIGHT:
+        case 'L':
             if (action == GLFW_PRESS) {
                 displayperiod /= 2;
                 if (displayperiod < 1) {
