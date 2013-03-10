@@ -40,6 +40,7 @@ int brightness;
 int displayperiod;
 int winwidth;
 bool redraw;
+bool reassign;
 
 double window[SAMPSIZE];
 double window_dt[SAMPSIZE];
@@ -65,11 +66,10 @@ void init_tables()
     double scl = 1.0/winwidth;
     int i;
     for (i = 0; i < SAMPSIZE; i++) {
-        double z = (double)(i - SAMPSIZE/2) / (winwidth);
+        double z = -(double)(i - SAMPSIZE/2) / (winwidth);
 
         switch (windowfunction) {
             case gaussian:
-                z *= 2;
                 window[i] = exp(-z*z/2) / SQRTWOPI * scl * 2;
                 window_dt[i] = window[i] * -SAMPLERATE*z/winwidth;
                 break;
@@ -79,6 +79,7 @@ void init_tables()
                 } else {
                     window[i] = (cos(M_PI*z)+1)/2 * scl;
                 }
+                window_dt[i] = 0;
                 break;
             case nuttall:
                 if (z <= -1 || z >= 1) {
@@ -90,6 +91,7 @@ void init_tables()
                     window[i] += 0.012604 * cos(M_PI*3*z);
                     window[i] *= scl;
                 }
+                window_dt[i] = 0;
                 break;
             case rect:
                 if (z <= -1 || z >= 1) {
@@ -97,6 +99,7 @@ void init_tables()
                 } else {
                     window[i] = scl/2;
                 }
+                window_dt[i] = 0;
                 break;
         }
     }
@@ -159,6 +162,12 @@ void GLFWCALL keyCallback(int key, int action)
                     displayperiod = 1;
                 }
                 printf("Period: %d\n", displayperiod);
+            }
+            break;
+        case 'R':
+            if (action == GLFW_PRESS) {
+                reassign = !reassign;
+                printf("Reassignment: %s\n", reassign ? "On" : "Off");
             }
             break;
         case '=':
@@ -295,6 +304,7 @@ int main(int argc, char* argv[])
     brightness = 50;
     displayperiod = 128;
     winwidth = 256;
+    reassign = false;
 
     const int FTSIZE = SAMPSIZE/2 + 1;
     double *screen_fl = calloc(WIDTH*FTSIZE, sizeof(double));
@@ -388,10 +398,34 @@ int main(int argc, char* argv[])
                 }
                 fftw_execute(plan_dt);
 
+                int future_x = (x + 64) % WIDTH;
+                for (y = 0; y < FTSIZE; y++) {
+                    IX(screen_fl, FTSIZE, y, future_x) = 0;
+                }
+
+                double sigma2 = pow((double)winwidth / SAMPLERATE, 2);
                 for (k = 0; k < FTSIZE; k++) {
-                    y = k;
                     double absft = cabs(ft[k]);
-                    IX(screen_fl, FTSIZE, y, x) = absft * absft;
+                    double power = absft * absft;
+                    double phi_dt = cimag(ft_dt[k] / ft[k]);
+                    double phi_dw = creal(ft_dt[k] / ft[k]) * sigma2;
+
+                    double x_fl = x;
+                    double y_fl = k;
+                    if (reassign) {
+                        x_fl += phi_dw / ((double)displayperiod / SAMPLERATE);
+                        y_fl += phi_dt * (double)SAMPSIZE / (TWOPI * SAMPLERATE);
+                    }
+                    int xx = x_fl;
+                    y = y_fl;
+                    double off_x = x_fl - xx;
+                    double off_y = y_fl - y;
+                    if (0 <= xx && xx < WIDTH - 1 && 0 <= y && y < FTSIZE - 1) {
+                        IX(screen_fl, FTSIZE, y, xx) += (1-off_x) * (1-off_y) * power;
+                        IX(screen_fl, FTSIZE, y+1, xx) += (1-off_x) * off_y * power;
+                        IX(screen_fl, FTSIZE, y, xx+1) += off_x * (1-off_y) * power;
+                        IX(screen_fl, FTSIZE, y+1, xx+1) += off_x * off_y * power;
+                    }
                 }
 
                 if (x < x_min) x_min = x;
