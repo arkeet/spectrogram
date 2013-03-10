@@ -21,12 +21,12 @@
 #define TWOPI (2*M_PI)
 #define SQRTWOPI (sqrt(2*M_PI))
 
-#define WIDTH 800
+#define WIDTH 1024
 #define HEIGHT 600
 #define SAMPLERATE 22050
 #define BUFSIZE 512
-#define SAMPSIZE 2048
-#define NBUFFERS 16
+#define SAMPSIZE 4096
+#define NBUFFERS 32
 
 #define IX(arr,stride,x,y) ((arr)[(y)*(stride)+(x)])
 
@@ -125,7 +125,7 @@ void GLFWCALL keyCallback(int key, int action)
         case GLFW_KEY_SPACE:
             if (action == GLFW_PRESS) {
                 paused = !paused;
-                printf("%s\n", paused ? "paused" : "unpaused");
+                printf("%s\n", paused ? "Paused" : "Unpaused");
             }
             break;
         case GLFW_KEY_UP:
@@ -366,8 +366,8 @@ int main(int argc, char* argv[])
         while (!paused && mydata.time > buftime) {
             pthread_mutex_lock(&mutex);
 
-            if (mydata.time - buftime > BUFSIZE * NBUFFERS || nloop++ > 7) {
-                printf("dropped\n", mydata.time);
+            if (mydata.time - buftime > BUFSIZE * NBUFFERS || nloop++ > 15) {
+                printf("Dropped\n", mydata.time);
                 buftime = mydata.time;
                 nextbuf = mydata.nextbuf;
                 pthread_mutex_unlock(&mutex);
