@@ -306,6 +306,8 @@ int main(int argc, char* argv[])
     GLuint tex;
     glGenTextures(1, &tex);
     glBindTexture(GL_TEXTURE_RECTANGLE, tex);
+    glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RGBA, FTSIZE, WIDTH, 0,
+            GL_RGBA, GL_UNSIGNED_BYTE, 0);
 
     double buf[BUFSIZE*NBUFFERS];
     double ft_in[SAMPSIZE];
