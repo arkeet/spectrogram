@@ -222,9 +222,10 @@ double log10_fast(double a) {
     return (u.x - 4606921278410026770) * 6.684208645779258e-17;
 }
 
-uint32_t colourmap(double x)
+uint32_t colourmap(fftw_complex z)
 {
     uint8_t rgba[4];
+    double x = creal(z)*creal(z) + cimag(z)*cimag(z);
     double logx = log10_fast(x) + (double)brightness/10;
     rgba[0] = logistic(logx-0) * 255;
     rgba[1] = logistic(logx-2) * 255;
@@ -307,7 +308,7 @@ int main(int argc, char* argv[])
     reassign = false;
 
     const int FTSIZE = SAMPSIZE/2 + 1;
-    double *screen_fl = calloc(WIDTH*FTSIZE, sizeof(double));
+    fftw_complex *screen_fl = calloc(WIDTH*FTSIZE, sizeof(fftw_complex));
     uint32_t *screen = calloc(WIDTH*FTSIZE, sizeof(uint32_t));
     memset(screen, 0, sizeof(uint32_t)*WIDTH*FTSIZE);
 
@@ -407,8 +408,8 @@ int main(int argc, char* argv[])
 
                 double sigma2 = pow((double)winwidth / SAMPLERATE, 2);
                 for (k = 0; k < FTSIZE; k++) {
-                    double absft = cabs(ft[k]);
-                    double power = absft * absft;
+                    //double absft = cabs(ft[k]);
+                    //double power = absft * absft;
                     double phi_dt = cimag(ft_dt[k] / ft[k]);
                     double phi_dw = creal(ft_dt[k] / ft[k]) * sigma2;
 
@@ -423,10 +424,10 @@ int main(int argc, char* argv[])
                     double off_x = x_fl - xx;
                     double off_y = y_fl - y;
                     if (0 <= xx && xx < WIDTH - 1 && 0 <= y && y < FTSIZE - 1) {
-                        IX(screen_fl, FTSIZE, y, xx) += (1-off_x) * (1-off_y) * power;
-                        IX(screen_fl, FTSIZE, y+1, xx) += (1-off_x) * off_y * power;
-                        IX(screen_fl, FTSIZE, y, xx+1) += off_x * (1-off_y) * power;
-                        IX(screen_fl, FTSIZE, y+1, xx+1) += off_x * off_y * power;
+                        IX(screen_fl, FTSIZE, y, xx) += (1-off_x) * (1-off_y) * ft[k];
+                        IX(screen_fl, FTSIZE, y+1, xx) += (1-off_x) * off_y * ft[k];
+                        IX(screen_fl, FTSIZE, y, xx+1) += off_x * (1-off_y) * ft[k];
+                        IX(screen_fl, FTSIZE, y+1, xx+1) += off_x * off_y * ft[k];
                     }
                 }
 
