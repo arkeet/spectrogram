@@ -1,3 +1,5 @@
+Source: https://github.com/arkeet/spectrogram
+
 Controls:
 
 Esc         quit
