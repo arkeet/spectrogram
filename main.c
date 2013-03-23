@@ -23,10 +23,10 @@
 
 #define WIDTH 1024
 #define HEIGHT 600
-#define SAMPLERATE 22050
+#define SAMPLERATE 44100
 #define BUFSIZE 512
 #define SAMPSIZE 4096
-#define NBUFFERS 32
+#define NBUFFERS 64
 
 #define IX(arr,stride,x,y) ((arr)[(y)*(stride)+(x)])
 
@@ -41,6 +41,7 @@ int displayperiod;
 int winwidth;
 bool redraw;
 bool reassign;
+int freqrange;
 
 double window[SAMPSIZE];
 double window_dt[SAMPSIZE];
@@ -60,6 +61,12 @@ const char *window_names[] = {
     "Rectangle",
     0
 };
+
+inline fftw_complex cis(double x)
+{
+    fftw_complex z = cos(x) + I*sin(x);
+    return z;
+}
 
 void init_tables()
 {
@@ -151,7 +158,7 @@ void GLFWCALL keyCallback(int key, int action)
                 if (displayperiod > BUFSIZE) {
                     displayperiod = BUFSIZE;
                 }
-                printf("Period: %d\n", displayperiod);
+                printf("Speed: %d samples per pixel\n", displayperiod);
             }
             break;
         case GLFW_KEY_RIGHT:
@@ -161,7 +168,7 @@ void GLFWCALL keyCallback(int key, int action)
                 if (displayperiod < 1) {
                     displayperiod = 1;
                 }
-                printf("Period: %d\n", displayperiod);
+                printf("Speed: %d samples per pixel\n", displayperiod);
             }
             break;
         case 'R':
@@ -177,7 +184,7 @@ void GLFWCALL keyCallback(int key, int action)
                     winwidth = SAMPSIZE/2;
                 }
                 init_tables();
-                printf("Window width: %d\n", winwidth);
+                printf("Window width: %d samples\n", winwidth);
             }
             break;
         case '-':
@@ -187,7 +194,7 @@ void GLFWCALL keyCallback(int key, int action)
                     winwidth = 1;
                 }
                 init_tables();
-                printf("Window width: %d\n", winwidth);
+                printf("Window width: %d samples\n", winwidth);
             }
             break;
         case '0':
@@ -197,7 +204,17 @@ void GLFWCALL keyCallback(int key, int action)
                     windowfunction = 0;
                 }
                 init_tables();
-                printf("Window: %s\n", window_names[windowfunction]);
+                printf("Window function: %s\n", window_names[windowfunction]);
+            }
+            break;
+        case '/':
+            if (action == GLFW_PRESS) {
+                if (freqrange == HEIGHT) {
+                    freqrange = SAMPSIZE/2;
+                } else {
+                    freqrange = HEIGHT;
+                }
+                printf("Display range: %d Hz\n", SAMPLERATE * freqrange / SAMPSIZE);
             }
             break;
     }
@@ -303,12 +320,13 @@ int main(int argc, char* argv[])
     done = false;
     paused = false;
     brightness = 50;
-    displayperiod = 128;
-    winwidth = 256;
+    displayperiod = 256;
+    winwidth = 512;
     reassign = false;
+    freqrange = HEIGHT;
 
     const int FTSIZE = SAMPSIZE/2 + 1;
-    fftw_complex *screen_fl = calloc(WIDTH*FTSIZE, sizeof(fftw_complex));
+    fftw_complex *screen_fl = calloc(WIDTH*HEIGHT, sizeof(fftw_complex));
     uint32_t *screen = calloc(WIDTH*FTSIZE, sizeof(uint32_t));
     memset(screen, 0, sizeof(uint32_t)*WIDTH*FTSIZE);
 
@@ -344,6 +362,8 @@ int main(int argc, char* argv[])
             paCallback, &mydata);
     Pa_StartStream(stream);
 
+    printf("Sample rate: %d Hz\n", SAMPLERATE);
+
     int frame_num = 0;
     double update_time = gettime();
     double frame_time = gettime();
@@ -354,7 +374,8 @@ int main(int argc, char* argv[])
     init_tables();
 
     int x, y;
-    x = 0;
+    int position = 0;
+    int prev_future_x = 0;
 
     while (!done) {
         int i, j, k;
@@ -369,7 +390,7 @@ int main(int argc, char* argv[])
         while (!paused && mydata.time > buftime) {
             pthread_mutex_lock(&mutex);
 
-            if (mydata.time - buftime > BUFSIZE * NBUFFERS || nloop++ > 15) {
+            if (mydata.time - buftime > BUFSIZE * NBUFFERS || nloop++ > 7) {
                 printf("Dropped\n", mydata.time);
                 buftime = mydata.time;
                 nextbuf = mydata.nextbuf;
@@ -379,6 +400,7 @@ int main(int argc, char* argv[])
 
             processtime = gettime();
             for (j = 0; j < BUFSIZE; j += displayperiod) {
+                x = position % WIDTH;
                 double *curbuf;
 
                 curbuf = buf + (nextbuf + NBUFFERS) * BUFSIZE - SAMPSIZE + j;
@@ -401,39 +423,54 @@ int main(int argc, char* argv[])
                 }
                 fftw_execute(plan_dt);
 
-                int future_x = (x + 64) % WIDTH;
-                for (y = 0; y < FTSIZE; y++) {
-                    IX(screen_fl, FTSIZE, y, future_x) = 0;
+                int max_dx = 8 * winwidth / displayperiod;
+
+                int future_x = position + max_dx;
+                while (prev_future_x < future_x) {
+                    prev_future_x++;
+                    for (y = 0; y < HEIGHT; y++) {
+                        IX(screen_fl, HEIGHT, y, prev_future_x % WIDTH) = 0;
+                    }
                 }
 
+                int samptime = buftime + j;
                 double sigma2 = pow((double)winwidth / SAMPLERATE, 2);
                 for (k = 0; k < FTSIZE; k++) {
-                    //double absft = cabs(ft[k]);
-                    //double power = absft * absft;
                     double phi_dt = cimag(ft_dt[k] / ft[k]);
                     double phi_dw = creal(ft_dt[k] / ft[k]) * sigma2;
 
                     double x_fl = x;
-                    double y_fl = k;
+                    double omega = k * (TWOPI * (double)SAMPLERATE / SAMPSIZE);
+                    double avg_omega = omega;
                     if (reassign) {
                         x_fl += phi_dw / ((double)displayperiod / SAMPLERATE);
-                        y_fl += phi_dt * (double)SAMPSIZE / (TWOPI * SAMPLERATE);
+                        omega += phi_dt;
+                        avg_omega += phi_dt/2;
                     }
-                    int xx = x_fl;
-                    y = y_fl;
+                    double y_fl = omega / (TWOPI * (double)SAMPLERATE / SAMPSIZE);
+                    y_fl *= (double)HEIGHT/freqrange;
+
+                    int xx = floor(x_fl);
+                    int yy = floor(y_fl);
                     double off_x = x_fl - xx;
-                    double off_y = y_fl - y;
-                    if (0 <= xx && xx < WIDTH - 1 && 0 <= y && y < FTSIZE - 1) {
-                        IX(screen_fl, FTSIZE, y, xx) += (1-off_x) * (1-off_y) * ft[k];
-                        IX(screen_fl, FTSIZE, y+1, xx) += (1-off_x) * off_y * ft[k];
-                        IX(screen_fl, FTSIZE, y, xx+1) += off_x * (1-off_y) * ft[k];
-                        IX(screen_fl, FTSIZE, y+1, xx+1) += off_x * off_y * ft[k];
+                    double off_y = y_fl - yy;
+                    if (0 <= xx && xx < WIDTH - 1 && 0 <= yy && yy < HEIGHT - 1 &&
+                            xx >= x - max_dx && xx <= x + max_dx) {
+                        ft[k] *= cis(avg_omega * phi_dw);
+                        if (k % 2 == 1) { ft[k] = -ft[k]; }
+                        IX(screen_fl, HEIGHT, yy, xx) += (1-off_x) * (1-off_y) * ft[k];
+                        IX(screen_fl, HEIGHT, yy+1, xx) += (1-off_x) * off_y * ft[k];
+                        IX(screen_fl, HEIGHT, yy, xx+1) += off_x * (1-off_y) * ft[k];
+                        IX(screen_fl, HEIGHT, yy+1, xx+1) += off_x * off_y * ft[k];
                     }
                 }
 
-                if (x < x_min) x_min = x;
-                if (x > x_max) x_max = x;
-                x = (x + 1) % WIDTH;
+                if ((x-max_dx) < x_min) x_min = (x-max_dx);
+                if (x_min < 0) x_min = 0;
+                if ((x+max_dx) > x_max) x_max = (x+max_dx);
+                if (x_max > WIDTH-1) x_max = WIDTH-1;
+
+                position++;
             }
             processtime = gettime() - processtime;
 
@@ -450,8 +487,8 @@ int main(int argc, char* argv[])
                 redraw = false;
             }
             for (i = x_min; i <= x_max; i++) {
-                for (j = 0; j < FTSIZE; j++) {
-                    IX(screen, FTSIZE, j, i) = colourmap(IX(screen_fl, FTSIZE, j, i));
+                for (j = 0; j < HEIGHT; j++) {
+                    IX(screen, FTSIZE, j, i) = colourmap(IX(screen_fl, HEIGHT, j, i));
                 }
             }
             glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RGBA, FTSIZE, WIDTH, 0,
@@ -466,9 +503,9 @@ int main(int argc, char* argv[])
         glClear(GL_COLOR_BUFFER_BIT);
 
         glBegin(GL_QUADS);
-        glTexCoord2f(FTSIZE, 0);
+        glTexCoord2f(HEIGHT, 0);
         glVertex2f(0, 0);
-        glTexCoord2f(FTSIZE, WIDTH);
+        glTexCoord2f(HEIGHT, WIDTH);
         glVertex2f(WIDTH, 0);
         glTexCoord2f(0, WIDTH);
         glVertex2f(WIDTH, HEIGHT);
